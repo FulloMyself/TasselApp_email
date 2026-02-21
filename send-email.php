@@ -1,6 +1,18 @@
 <?php
-// send-email.php - lightweight JSON HTTP endpoint to send emails
+// send-email.php - Send emails using PHPMailer with SMTP
 // Usage: POST JSON { to, subject, text, html, apiKey }
+
+require 'vendor/autoload.php';
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+use Dotenv\Dotenv;
+
+// Load environment variables if .env exists
+if (file_exists(__DIR__ . '/.env')) {
+    $dotenv = Dotenv::createImmutable(__DIR__);
+    $dotenv->load();
+}
 
 header('Content-Type: application/json');
 
@@ -25,9 +37,17 @@ $text = $data['text'] ?? '';
 $html = $data['html'] ?? '';
 $providedKey = $data['apiKey'] ?? '';
 
-// Get env vars (fallback to defaults)
+// Get env vars
 $expectedKey = getenv('PHP_MAIL_KEY') ?: '';
-$from = getenv('FROM_EMAIL') ?: 'noreply@localhost';
+$fromEmail = getenv('FROM_EMAIL') ?: 'noreply@tasselapp.com';
+$fromName = getenv('FROM_NAME') ?: 'Tassel Salon';
+
+// SMTP Configuration (add these to your Render environment variables)
+$smtpHost = getenv('SMTP_HOST') ?: 'smtp.gmail.com'; // or your SMTP provider
+$smtpPort = getenv('SMTP_PORT') ?: 587;
+$smtpUser = getenv('SMTP_USER') ?: '';
+$smtpPass = getenv('SMTP_PASS') ?: '';
+$smtpSecure = getenv('SMTP_SECURE') ?: 'tls'; // tls or ssl
 
 // Validate API key if configured
 if (!empty($expectedKey)) {
@@ -44,23 +64,36 @@ if (empty($to)) {
     exit;
 }
 
-// Prepare message (prefer HTML if provided)
-$message = !empty($html) ? $html : nl2br(htmlspecialchars($text));
+// Create PHPMailer instance
+$mail = new PHPMailer(true);
 
-// Prepare headers
-$eol = "\r\n";
-$headers = "From: " . $from . $eol;
-$headers .= "MIME-Version: 1.0" . $eol;
-$headers .= "Content-Type: text/html; charset=UTF-8" . $eol;
-
-// Send using PHP mail()
-$success = @mail($to, $subject, $message, $headers);
-
-if ($success) {
+try {
+    // Server settings
+    $mail->isSMTP();
+    $mail->Host       = $smtpHost;
+    $mail->SMTPAuth   = true;
+    $mail->Username   = $smtpUser;
+    $mail->Password   = $smtpPass;
+    $mail->SMTPSecure = $smtpSecure;
+    $mail->Port       = $smtpPort;
+    
+    // Recipients
+    $mail->setFrom($fromEmail, $fromName);
+    $mail->addAddress($to);
+    
+    // Content
+    $mail->isHTML(true);
+    $mail->Subject = $subject;
+    $mail->Body    = !empty($html) ? $html : nl2br(htmlspecialchars($text));
+    $mail->AltBody = $text;
+    
+    $mail->send();
+    
     http_response_code(200);
-    echo json_encode(['ok' => true, 'message' => 'Email sent']);
-} else {
+    echo json_encode(['ok' => true, 'message' => 'Email sent successfully']);
+    
+} catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'mail() failed']);
+    echo json_encode(['error' => 'Mailer Error: ' . $mail->ErrorInfo]);
 }
 exit;
