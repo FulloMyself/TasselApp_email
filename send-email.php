@@ -1,78 +1,78 @@
 <?php
-// send-email.php
-// Simple PHP endpoint to accept JSON payload and send email via mail().
-// Expected JSON: { to, subject, text, html, apiKey }
+// send-email.php - lightweight JSON HTTP endpoint to send emails
+// Usage: POST JSON { to, subject, text, html, apiKey }
+
+// Attempt to load phpdotenv if available (optional)
+if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+    require __DIR__ . '/vendor/autoload.php';
+    if (class_exists('Dotenv\Dotenv')) {
+        $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+        $dotenv->safeLoad();
+    }
+}
 
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
-$raw = file_get_contents('php://input');
-if (!$raw) {
-    echo json_encode(['error' => 'Empty request']);
+$input = file_get_contents('php://input');
+if (!$input) {
     http_response_code(400);
-    exit();
+    echo json_encode(['error' => 'No input provided']);
+    exit;
 }
 
-$data = json_decode($raw, true);
+$data = json_decode($input, true);
 if (json_last_error() !== JSON_ERROR_NONE) {
-    echo json_encode(['error' => 'Invalid JSON']);
     http_response_code(400);
-    exit();
+    echo json_encode(['error' => 'Invalid JSON']);
+    exit;
 }
 
-$required = ['to', 'subject'];
-foreach ($required as $r) {
-    if (empty($data[$r])) {
-        echo json_encode(['error' => "Missing field: $r"]);
-        http_response_code(400);
-        exit();
+$to = $data['to'] ?? null;
+$subject = $data['subject'] ?? '(no subject)';
+$text = $data['text'] ?? '';
+$html = $data['html'] ?? '';
+$providedKey = $data['apiKey'] ?? '';
+
+$expectedKey = getenv('PHP_MAIL_KEY') ?: '';
+$from = getenv('FROM_EMAIL') ?: ('no-reply@' . ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+
+// If an API key is configured, validate it
+if ($expectedKey !== '') {
+    if (empty($providedKey) || $providedKey !== $expectedKey) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Invalid API key']);
+        exit;
     }
 }
 
-// Optional API key check
-$expectedKey = getenv('PHP_MAIL_KEY');
-if ($expectedKey && (!isset($data['apiKey']) || $data['apiKey'] !== $expectedKey)) {
-    echo json_encode(['error' => 'Unauthorized']);
-    http_response_code(403);
-    exit();
+if (empty($to)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Recipient `to` is required']);
+    exit;
 }
 
-$to = filter_var($data['to'], FILTER_SANITIZE_EMAIL);
-$subject = substr(strip_tags($data['subject']), 0, 200);
-$text = isset($data['text']) ? $data['text'] : '';
-$html = isset($data['html']) ? $data['html'] : $text;
+// Build headers
+$separator = md5(time());
+$eol = "\r\n";
+$headers = [];
+$headers[] = "From: {$from}";
+$headers[] = "MIME-Version: 1.0";
+$headers[] = "Content-Type: text/html; charset=UTF-8";
 
-// Build headers for HTML email
-$headers = "MIME-Version: 1.0" . "\r\n";
-$headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
-$from = getenv('FROM_EMAIL') ?: null;
-if ($from) {
-    $headers .= "From: " . $from . "\r\n";
-}
+$message = $html ?: nl2br(htmlspecialchars($text));
 
 $success = false;
-try {
-    // Use mail(); on many hosts this will be forwarded via sendmail/postfix
-    $mailBody = $html ?: $text;
-    if (@mail($to, $subject, $mailBody, $headers)) {
-        $success = true;
-        echo json_encode(['success' => true, 'message' => 'Email queued for delivery']);
-    } else {
-        // mail() failed — return error so caller can fallback
-        echo json_encode(['error' => 'mail() failed']);
-        http_response_code(500);
-    }
-} catch (Exception $e) {
-    error_log('Mail error: ' . $e->getMessage());
-    echo json_encode(['error' => 'Exception while sending email']);
-    http_response_code(500);
+// Use mail() if available
+if (function_exists('mail')) {
+    $success = @mail($to, $subject, $message, implode($eol, $headers));
 }
 
-?>
+if ($success) {
+    echo json_encode(['ok' => true, 'message' => 'Email sent']);
+    exit;
+}
+
+// If mail() failed, return error with hint
+http_response_code(500);
+echo json_encode(['error' => 'Failed to send email (mail() returned false). Consider configuring a proper SMTP mailer or using a transactional email provider.']);
+exit;

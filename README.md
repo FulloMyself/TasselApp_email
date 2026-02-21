@@ -1,38 +1,34 @@
-Send Email PHP Endpoint
-=======================
+# Email service (lightweight PHP)
 
-This folder contains a lightweight PHP endpoint (`send-email.php`) that accepts a JSON POST and attempts to send an email using PHP's `mail()` function.
+This tiny HTTP endpoint accepts a JSON POST and attempts to send an HTML email using PHP's `mail()` function.
 
-Usage (expected JSON payload):
+Recommended deployment: Render as a separate Web Service (PHP). Configure the environment variables on Render rather than committing secrets.
 
-{
-  "to": "recipient@example.com",
-  "subject": "Your temporary password",
-  "text": "Plain text body",
-  "html": "<p>HTML body</p>",
-  "apiKey": "optional-shared-key"
-}
+Required / optional environment variables (set on Render):
+- `FROM_EMAIL` (optional): the From: address used when sending emails.
+- `PHP_MAIL_KEY` (optional): secret API key the backend will include when calling this endpoint.
 
-Environment variables (set on Render):
+Local testing (optional)
+1. (Optional) Install `vlucas/phpdotenv` with Composer if you prefer a `.env` file locally:
+   ```bash
+   composer require vlucas/phpdotenv
+   ```
+2. Create a `.env` file in this folder with:
+   ```env
+   PHP_MAIL_KEY=your_test_key
+   FROM_EMAIL=no-reply@example.com
+   ```
+3. Start a local PHP server:
+   ```powershell
+   php -S 0.0.0.0:8080
+   ```
+4. Call the endpoint:
+   ```bash
+   curl -X POST http://localhost:8080/send-email.php \
+     -H "Content-Type: application/json" \
+     -d '{"to":"you@example.com","subject":"Test","text":"Hi","apiKey":"your_test_key"}'
+   ```
 
-- `PHP_MAIL_KEY` (optional) — secret that must match `apiKey` in the request
-- `FROM_EMAIL` (optional) — value used in the From header
-
-Deploying to Render.com
------------------------
-
-1. Create a new Git repository (or a subfolder) containing this `email_service` folder and push to GitHub.
-
-2. On Render, create a new Web Service:
-   - Connect your repo and pick the branch.
-   - Set the `Root` (or `Build Command`) to the folder containing `send-email.php` if needed.
-   - Set the `Start Command` to: `php -S 0.0.0.0:10000 -t .`
-   - Add environment variables: `PHP_MAIL_KEY` (optional), `FROM_EMAIL` (optional).
-
-3. Once deployed, the endpoint will be available at `https://<your-service>.onrender.com/send-email.php`.
-
-Notes & recommendations
------------------------
-- `mail()` relies on the host's mail transport (sendmail/postfix). On many managed hosts this is available; on others you may need to implement SMTP or use an external API.
-- For production reliability, consider using an external mail API (SendGrid, Mailgun) from the PHP service or configure SMTP and use PHPMailer.
-- Keep `PHP_MAIL_KEY` secret and use HTTPS.
+Notes:
+- `mail()` may not be available or configured on all hosts (Render may require external transactional email services). For production reliability, replace this script with one that uses PHPMailer + SMTP or calls a transactional email API (SendGrid, Mailgun, etc.).
+- Do not commit a `.env` with secrets. Use Render's environment variables.
