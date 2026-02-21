@@ -5,8 +5,8 @@
 // Attempt to load Composer autoload + dotenv
 if (file_exists(__DIR__ . '/vendor/autoload.php')) {
     require __DIR__ . '/vendor/autoload.php';
-    if (class_exists('Dotenv\\Dotenv')) {
-        $dotenv = Dotenv\\Dotenv::createImmutable(__DIR__);
+    if (class_exists('Dotenv\Dotenv')) {
+        $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
         $dotenv->safeLoad();
     }
 }
@@ -57,7 +57,7 @@ $message = $html ?: nl2br(htmlspecialchars($text));
 $smtpHost = getenv('SMTP_HOST') ?: '';
 $useSmtp = !empty($smtpHost);
 
-if ($useSmtp && class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
+if ($useSmtp && class_exists('PHPMailer\PHPMailer\PHPMailer')) {
     try {
         $mail = new PHPMailer\PHPMailer\PHPMailer(true);
         $mail->isSMTP();
