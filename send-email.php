@@ -1,12 +1,12 @@
 <?php
-// send-email.php - lightweight JSON HTTP endpoint to send emails
+// send-email.php - JSON POST endpoint to send emails
 // Usage: POST JSON { to, subject, text, html, apiKey }
 
-// Attempt to load phpdotenv if available (optional)
+// Attempt to load Composer autoload + dotenv
 if (file_exists(__DIR__ . '/vendor/autoload.php')) {
     require __DIR__ . '/vendor/autoload.php';
-    if (class_exists('Dotenv\Dotenv')) {
-        $dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+    if (class_exists('Dotenv\\Dotenv')) {
+        $dotenv = Dotenv\\Dotenv::createImmutable(__DIR__);
         $dotenv->safeLoad();
     }
 }
@@ -51,28 +51,54 @@ if (empty($to)) {
     exit;
 }
 
-// Build headers
-$separator = md5(time());
-$eol = "\r\n";
-$headers = [];
-$headers[] = "From: {$from}";
-$headers[] = "MIME-Version: 1.0";
-$headers[] = "Content-Type: text/html; charset=UTF-8";
-
 $message = $html ?: nl2br(htmlspecialchars($text));
 
-$success = false;
-// Use mail() if available
+// Prefer SMTP via PHPMailer when configured
+$smtpHost = getenv('SMTP_HOST') ?: '';
+$useSmtp = !empty($smtpHost);
+
+if ($useSmtp && class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
+    try {
+        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host = $smtpHost;
+        $mail->SMTPAuth = true;
+        $mail->Username = getenv('SMTP_USER') ?: '';
+        $mail->Password = getenv('SMTP_PASS') ?: '';
+        $smtpSecure = getenv('SMTP_SECURE') ?: '';
+        if (!empty($smtpSecure)) $mail->SMTPSecure = $smtpSecure; // 'ssl' or 'tls'
+        $mail->Port = intval(getenv('SMTP_PORT') ?: 587);
+
+        $mail->setFrom($from);
+        $mail->addAddress($to);
+        $mail->isHTML(true);
+        $mail->Subject = $subject;
+        $mail->Body = $message;
+        $mail->AltBody = $text;
+
+        $mail->send();
+        echo json_encode(['ok' => true, 'message' => 'Email sent via SMTP']);
+        exit;
+    } catch (Exception $e) {
+        error_log('PHPMailer error: ' . $e->getMessage());
+        // fall through to try mail()
+    }
+}
+
+// Fallback to mail()
 if (function_exists('mail')) {
+    $eol = "\r\n";
+    $headers = [];
+    $headers[] = "From: {$from}";
+    $headers[] = "MIME-Version: 1.0";
+    $headers[] = "Content-Type: text/html; charset=UTF-8";
     $success = @mail($to, $subject, $message, implode($eol, $headers));
+    if ($success) {
+        echo json_encode(['ok' => true, 'message' => 'Email sent via mail()']);
+        exit;
+    }
 }
 
-if ($success) {
-    echo json_encode(['ok' => true, 'message' => 'Email sent']);
-    exit;
-}
-
-// If mail() failed, return error with hint
 http_response_code(500);
-echo json_encode(['error' => 'Failed to send email (mail() returned false). Consider configuring a proper SMTP mailer or using a transactional email provider.']);
+echo json_encode(['error' => 'Failed to send email. Configure SMTP or use a transactional email provider.']);
 exit;
